@@ -296,6 +296,18 @@ async fn test_live_frame_processing_deadline_adherence() {
     let mut recv_buf = [0u8; 1024];
     let mut decoded_buf = [0.0f32; OPUS_FRAME_SIZE_SAMPLES];
 
+    // Warm up socket and encoder/decoder buffers before timing
+    for _ in 0..5 {
+        let enc_bytes = encoder.encode_float(&test_samples, &mut packet_buf[HEADER_SIZE..]).unwrap();
+        let header = PacketHeader::new(PayloadType::Opus, 0, 0, enc_bytes as u16);
+        header.encode(&mut packet_buf[..HEADER_SIZE]).unwrap();
+        sender.send_packet(&packet_buf[..HEADER_SIZE + enc_bytes]).await.unwrap();
+        let _ = receiver.recv_packet(&mut recv_buf).await.unwrap();
+        let _ = decoder
+            .decode_float(Some(&recv_buf[HEADER_SIZE..HEADER_SIZE + enc_bytes]), &mut decoded_buf)
+            .unwrap();
+    }
+
     let frame_count = 300;
     let mut deadline_misses = 0;
     let mut max_processing_us = 0u128;
