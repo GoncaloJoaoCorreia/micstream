@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    name: Prepare Release & Notes
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.calc-version.outputs.version }}
+      tag: ${{ steps.calc-version.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Next Version
+        id: calc-version
+        run: |
+          LATEST_TAG=$(git tag -l "v*.*.*" --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || echo "")
+          if [ -z "$LATEST_TAG" ]; then
+            BASE_VER=$(node -p "require('./package.json').version")
+            TARGET_VER="$BASE_VER"
+          else
+            CUR_VER="${LATEST_TAG#v}"
+            MAJOR=$(echo "$CUR_VER" | cut -d. -f1)
+            MINOR=$(echo "$CUR_VER" | cut -d. -f2)
+            PATCH=$(echo "$CUR_VER" | cut -d. -f3)
+            TARGET_VER="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+          echo "Target version: ${TARGET_VER}"
+          echo "version=${TARGET_VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${TARGET_VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate & Extract Changelog Notes
+        id: extract-notes
+        run: |
+          chmod +x .github/scripts/extract-changelog.sh
+          .github/scripts/extract-changelog.sh "${{ steps.calc-version.outputs.version }}" CHANGELOG.md release-notes.md
+
+      - name: Upload Release Notes Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+
+  build-binaries:
+    name: Build (${{ matrix.platform }})
+    needs: prepare-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: macos
+            os: macos-latest
+            artifact_pattern: src-tauri/target/release/bundle/dmg/*.dmg
+          - platform: windows
+            os: windows-latest
+            artifact_pattern: src-tauri/target/release/bundle/nsis/*-setup.exe
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync build version
+        run: |
+          npm version ${{ needs.prepare-release.outputs.version }} --no-git-tag-version
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+            c.version = '${{ needs.prepare-release.outputs.version }}';
+            fs.writeFileSync(p, JSON.stringify(c, null, 2) + '\n');
+          "
+
+      - name: Run Rust workspace tests
+        run: cargo test --workspace
+
+      - name: Build Tauri Desktop Application
+        run: npm run tauri build
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.platform }}
+          path: ${{ matrix.artifact_pattern }}
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [prepare-release, build-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Release Notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: ./notes
+
+      - name: Download Binary Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: ./release-assets
+          merge-multiple: true
+
+      - name: List Release Assets
+        run: ls -la ./release-assets
+
+      - name: Publish Release with Binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.tag }}
+          name: ${{ needs.prepare-release.outputs.tag }}
+          body_path: ./notes/release-notes.md
+          files: ./release-assets/*
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

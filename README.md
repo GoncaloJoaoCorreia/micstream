@@ -128,8 +128,14 @@ To pipe audio into host applications, a virtual audio loopback driver is require
 
 ```
 MicStream/
+├── .github/                     # GitHub Actions workflows and release scripts
+│   ├── scripts/
+│   │   └── extract-changelog.sh # Release notes extractor and validator
+│   └── workflows/
+│       └── release.yml          # Multi-platform release CI pipeline
 ├── docs/
 │   └── masterplan.md            # Comprehensive architecture, protocol, and roadmap
+├── CHANGELOG.md                 # Keep a Changelog version history
 ├── src-tauri/                   # Rust backend
 │   ├── Cargo.toml               # Cargo manifest & dependencies
 │   ├── tauri.conf.json          # Tauri configuration (window, permissions, bundle)
@@ -219,6 +225,85 @@ Click the **Gear** icon to open the Advanced Settings dialog:
 - **Target Jitter Buffer**: Adjust buffer depth (default: `5.0ms`, range: `2.5ms – 20.0ms`).
 - **UDP Port**: Change default listening/transmission port (default: `48124`).
 - **Manual IP Fallback**: Connect directly to hosts when mDNS multicast is blocked by network infrastructure.
+
+---
+
+## Release Process & Versioning
+
+MicStream follows [Semantic Versioning 2.0.0](https://semver.org/) (`vMAJOR.MINOR.PATCH`) and adheres to the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) standard.
+
+### Automated CI/CD Release Pipeline
+Native release binaries are compiled, tested, and published automatically via GitHub Actions on every push to the `main` branch.
+
+```
++─────────────────────────────────────────────────────────────+
+│                       Push to main                          │
++──────────────────────────────┬──────────────────────────────+
+                               │
+                               ▼
++─────────────────────────────────────────────────────────────+
+│           prepare-release (ubuntu-latest, ~5 sec)           │
+│   • Calculate next patch version (e.g. v0.1.0 -> v0.1.1)    │
+│   • Validate CHANGELOG.md contains matching ## [X.Y.Z]      │
+│   • Extract release notes to artifact                       │
++───────────────────────┬─────────────────────────────┬───────+
+                        │                             │
+                        ▼                             ▼
++──────────────────────────────+ +────────────────────────────+
+│  macos-latest (matrix)       │ │  windows-latest (matrix)   │
+│  • npm ci & cargo test       │ │  • npm ci & cargo test     │
+│  • npm run tauri build       │ │  • npm run tauri build     │
+│  • Upload .dmg artifact      │ │  • Upload NSIS .exe setup  │
++───────────────────────┬──────+ +─────────────────────┬──────+
+                        │                             │
+                        └──────────────┬──────────────┘
+                                       │ All builds succeed
+                                       ▼
++─────────────────────────────────────────────────────────────+
+│           publish-release (ubuntu-latest)                   │
+│   • Download macOS and Windows artifacts                    │
+│   • Create annotated Git tag vX.Y.Z                         │
+│   • Publish GitHub Release with notes and native installers │
++─────────────────────────────────────────────────────────────+
+```
+
+1. **Pre-flight Validation (`prepare-release`)**:
+   - Computes the target version by incrementing the patch number from the latest git tag (or defaults to the version in `package.json` if no tags exist).
+   - Validates that `CHANGELOG.md` contains an entry matching the target version (`## [X.Y.Z] - YYYY-MM-DD`). If the version heading is absent or empty, the workflow aborts immediately to conserve runner minutes.
+   - Extracts the release notes into an artifact.
+
+2. **Cross-Platform Matrix Build (`build-binaries`)**:
+   - Compiles and tests the Rust workspace (`cargo test --workspace`) and builds the React/Vite frontend.
+   - Generates native installers: `.dmg` for macOS and NSIS `.exe` (`*-setup.exe`) for Windows.
+   - Uploads compiled binaries as workflow artifacts.
+
+3. **Atomic Publication (`publish-release`)**:
+   - Downloads all platform artifacts once all matrix jobs succeed. If any platform fails, no release or tag is created.
+   - Creates the annotated Git tag `vX.Y.Z` and publishes the GitHub Release with attached installers and release notes.
+
+### How to Stage and Release a New Version
+1. Open `CHANGELOG.md`.
+2. Move unreleased changes from `## [Unreleased]` into a new section matching the next patch version:
+   ```markdown
+   ## [Unreleased]
+
+   ## [0.1.1] - 2026-09-22
+
+   ### Added
+   - Description of newly added feature.
+
+   ### Fixed
+   - Description of resolved bug fix.
+   ```
+3. Commit the updated `CHANGELOG.md` and push to `main` (or merge a PR into `main`):
+   ```bash
+   git add CHANGELOG.md
+   git commit -m "docs: prepare changelog for v0.1.1"
+   git push origin main
+   ```
+4. The GitHub Actions release workflow will trigger automatically, create tag `v0.1.1`, and publish the release with macOS and Windows binaries attached.
+
+> **Note for macOS Users**: Unsigned `.dmg` releases may trigger Gatekeeper on first launch. Right-click (or Control-click) the application in Finder and choose **Open**, then click **Open** to confirm.
 
 ---
 
