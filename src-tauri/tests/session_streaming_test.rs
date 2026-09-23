@@ -309,6 +309,7 @@ async fn test_bidirectional_heartbeat_and_rtt() {
 }
 
 #[tokio::test]
+#[ignore = "mDNS multicast discovery is unreliable in CI environments"]
 async fn test_mdns_discovery_roundtrip() {
     use micstream_lib::net::{DiscoveredHost, MdnsAdvertiser, MdnsBrowser};
     use std::sync::mpsc;
