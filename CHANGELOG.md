@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-29
+
+### Added
+- Live input microphone monitoring in client mode while idle, allowing users to verify mic levels before streaming.
+- `NSMicrophoneUsageDescription` in `Info.plist` for macOS microphone permission handling.
+- Multi-format audio support in CPAL capture and playback engines (`F64`, `I32`, `I8`, `U16`, `U8`, `U32`, `I64`, `U64`) with automatic linear resampling to 48 kHz.
+- Dedicated user installation guide (`docs/INSTALL.md`) and CI/CD release workflow documentation (`docs/RELEASE.md`).
+- Project guidance and operational context for contributors and AI agents (`AGENTS.md`).
+
+### Changed
+- Simplified `README.md` to focus on user-facing benefits and streamlined quickstart steps.
+- Renamed and organized `docs/ARCHITECTURE.md` as the authoritative system specification.
+- Dedicated the project to the public domain under the Unlicense.
+
+### Fixed
+- Fixed audio sample downmixing and linear resampling when capturing from non-48 kHz audio input hardware.
+- Fixed stream lifecycle management and socket binding safety when toggling between client and host modes.
+
 ## [0.1.0] - 2025-02-18
 
 ### Added

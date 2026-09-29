@@ -140,6 +140,9 @@ npm run tauri build
 
 # Run standalone audio prototype CLI (if debugging cpal capture/playback directly)
 cargo run --bin audio_prototype --manifest-path src-tauri/Cargo.toml
+
+# Validate and extract changelog release notes for a target version
+.github/scripts/extract-changelog.sh 0.1.1 CHANGELOG.md release-notes.md
 ```
 
 ---
@@ -156,8 +159,17 @@ cargo run --bin audio_prototype --manifest-path src-tauri/Cargo.toml
   - Use Tailwind CSS utility classes; avoid inline styles.
 - **Git Commits & Releases**:
   - Follow Conventional Commits format (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`).
-  - Follow the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format in `CHANGELOG.md` when preparing releases.
-  - For full release procedures, see `docs/RELEASE.md`.
+  - Follow the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format in `CHANGELOG.md`.
+  - **Automated CI/CD Release Invariants & Rules**:
+    - Pushes and merges to `main` automatically trigger `.github/workflows/release.yml`.
+    - The CI pipeline calculates the next release version (incrementing patch version from the latest `v*.*.*` tag) and validates `CHANGELOG.md` using `.github/scripts/extract-changelog.sh`.
+    - **MANDATORY**: Any change pushed to `main` intended for release MUST contain an explicit `## [X.Y.Z] - YYYY-MM-DD` section in `CHANGELOG.md` matching the next version. If missing or empty, CI fails immediately at the `prepare-release` gate.
+    - Before pushing to `main`, always verify changelog extraction locally:
+      ```bash
+      .github/scripts/extract-changelog.sh <TARGET_VERSION> CHANGELOG.md /dev/null
+      ```
+    - Keep version fields synchronized across `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
+  - For full release procedures and matrix build details, see `docs/RELEASE.md`.
 
 ---
 
