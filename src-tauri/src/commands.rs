@@ -43,7 +43,9 @@ pub async fn start_stream(
         }
     };
 
-    // Cleanly tear down any active sessions and advertiser
+    // Cleanly tear down any active sessions, advertiser, and input monitor
+    state.stop_input_monitor(None).await;
+
     let mut adv_lock = state.advertiser.lock().await;
     if let Some(adv) = adv_lock.take() {
         adv.stop();
@@ -115,6 +117,13 @@ pub async fn stop_stream(app: tauri::AppHandle, state: State<'_, AppState>) -> R
     state
         .set_status_and_emit(StreamStatus::Idle, Some(&app))
         .await;
+
+    let cfg = state.config.read().await.clone();
+    if cfg.role == crate::state::AppRole::Client {
+        let _ = state
+            .start_input_monitor(cfg.selected_input_device.clone(), Some(app))
+            .await;
+    }
     Ok(())
 }
 
@@ -125,7 +134,8 @@ pub async fn start_listen(
     port: u16,
     output_device_name: Option<String>,
 ) -> Result<(), String> {
-    // Cleanly tear down any active client session and discovery browser
+    // Cleanly tear down any active input monitor, client session and discovery browser
+    state.stop_input_monitor(None).await;
     let mut browser_lock = state.discovery_browser.lock().await;
     if let Some(browser) = browser_lock.take() {
         browser.stop();
@@ -281,5 +291,23 @@ pub async fn set_target_jitter(state: State<'_, AppState>, jitter_ms: f32) -> Re
     }
     let mut cfg = state.config.write().await;
     cfg.target_jitter_ms = jitter_ms;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn start_input_monitor(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    device_name: Option<String>,
+) -> Result<(), String> {
+    state.start_input_monitor(device_name, Some(app)).await
+}
+
+#[tauri::command]
+pub async fn stop_input_monitor(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.stop_input_monitor(Some(&app)).await;
     Ok(())
 }

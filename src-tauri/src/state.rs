@@ -1,3 +1,4 @@
+use crate::audio::AudioCaptureEngine;
 use crate::net::{MdnsAdvertiser, MdnsBrowser, StreamTelemetry};
 use crate::session::{AtomicF32, ClientSession, HostSession, StreamStatus};
 use serde::{Deserialize, Serialize};
@@ -45,6 +46,11 @@ impl Default for AppConfig {
     }
 }
 
+pub struct InputMonitor {
+    pub engine: AudioCaptureEngine,
+    pub stop_tx: tokio::sync::oneshot::Sender<()>,
+}
+
 pub struct AppState {
     pub config: RwLock<AppConfig>,
     pub is_streaming: Arc<AtomicBool>,
@@ -56,6 +62,7 @@ pub struct AppState {
     pub active_host_session: Arc<tokio::sync::Mutex<Option<HostSession>>>,
     pub advertiser: Arc<tokio::sync::Mutex<Option<MdnsAdvertiser>>>,
     pub discovery_browser: Arc<tokio::sync::Mutex<Option<MdnsBrowser>>>,
+    pub input_monitor: Arc<tokio::sync::Mutex<Option<InputMonitor>>>,
 }
 
 impl Default for AppState {
@@ -77,6 +84,7 @@ impl AppState {
             active_host_session: Arc::new(tokio::sync::Mutex::new(None)),
             advertiser: Arc::new(tokio::sync::Mutex::new(None)),
             discovery_browser: Arc::new(tokio::sync::Mutex::new(None)),
+            input_monitor: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 
@@ -112,11 +120,98 @@ impl AppState {
         }
     }
 
+    pub async fn start_input_monitor(
+        &self,
+        device_name: Option<String>,
+        app: Option<tauri::AppHandle>,
+    ) -> Result<(), String> {
+        let status = self.get_status().await;
+        if status == StreamStatus::Streaming || status == StreamStatus::Listening {
+            return Ok(());
+        }
+
+        self.stop_input_monitor(None).await;
+
+        let atomic_rms = Arc::clone(&self.atomic_input_rms);
+        let capture_engine = AudioCaptureEngine::start(device_name.as_deref(), move |_samples, rms| {
+            atomic_rms.set(rms);
+        })
+        .map_err(|e| format!("Failed to start microphone monitor: {}", e))?;
+
+        let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel();
+
+        if let Some(app_handle) = app {
+            let input_rms = Arc::clone(&self.atomic_input_rms);
+            tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(std::time::Duration::from_millis(16));
+                let mut peak: f32 = 0.0;
+                let decay_rate: f32 = 0.95;
+
+                loop {
+                    tokio::select! {
+                        _ = &mut stop_rx => {
+                            let _ = app_handle.emit(
+                                "audio-level",
+                                serde_json::json!({
+                                    "input_level": 0.0,
+                                    "output_level": 0.0,
+                                    "peak": 0.0
+                                }),
+                            );
+                            break;
+                        }
+                        _ = ticker.tick() => {
+                            let in_lvl = input_rms.get();
+                            peak = (peak * decay_rate).max(in_lvl);
+
+                            let _ = app_handle.emit(
+                                "audio-level",
+                                serde_json::json!({
+                                    "input_level": in_lvl,
+                                    "output_level": 0.0,
+                                    "peak": peak
+                                }),
+                            );
+                        }
+                    }
+                }
+            });
+        }
+
+        let mut monitor_lock = self.input_monitor.lock().await;
+        *monitor_lock = Some(InputMonitor {
+            engine: capture_engine,
+            stop_tx,
+        });
+
+        Ok(())
+    }
+
+    pub async fn stop_input_monitor(&self, app: Option<&tauri::AppHandle>) {
+        let mut monitor_lock = self.input_monitor.lock().await;
+        if let Some(monitor) = monitor_lock.take() {
+            let _ = monitor.stop_tx.send(());
+            monitor.engine.stop();
+        }
+        self.atomic_input_rms.set(0.0);
+        if let Some(app) = app {
+            let _ = app.emit(
+                "audio-level",
+                serde_json::json!({
+                    "input_level": 0.0,
+                    "output_level": 0.0,
+                    "peak": 0.0
+                }),
+            );
+        }
+    }
+
     pub async fn stop_all(&self) {
         self.stop_all_and_emit(None).await;
     }
 
     pub async fn stop_all_and_emit(&self, app: Option<&tauri::AppHandle>) {
+        self.stop_input_monitor(app).await;
         let mut client_lock = self.active_client_session.lock().await;
         if let Some(mut client) = client_lock.take() {
             client.stop().await;

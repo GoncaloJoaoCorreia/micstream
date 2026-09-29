@@ -1,4 +1,4 @@
-# MicStream — Master Plan & Technical Specification
+# MicStream — Architecture & Technical Specification
 
 > **Ultra-Low Latency Cross-Platform LAN Microphone Streaming Utility**  
 > *Targeted for Moonlight, Apollo, and Sunshine Game Streaming Environments*
@@ -355,7 +355,9 @@ MicStream/
 ├── Cargo.toml                       # Cargo workspace definition
 ├── README.md                        # Quickstart, overview, and setup guide
 ├── docs/
-│   └── masterplan.md                # This document
+│   ├── ARCHITECTURE.md          # Comprehensive architecture, protocol, and roadmap
+│   ├── INSTALL.md               # Step-by-step installation & virtual audio setup guide
+│   └── RELEASE.md               # CI/CD release pipeline, workflow & version staging
 ├── src-tauri/                       # Rust backend
 │   ├── Cargo.toml                   # Tauri & Rust crate dependencies
 │   ├── tauri.conf.json              # Tauri application configuration
@@ -426,7 +428,7 @@ MicStream/
 ### Milestone 1: Core Scaffolding, Documentation & Prototyping
 - **Objective**: Establish project repository, build pipelines, and documentation.
 - **Tasks**:
-  1. Author `README.md` and `docs/masterplan.md`.
+  1. Author `README.md` and `docs/ARCHITECTURE.md`.
   2. Initialize Tauri v2 workspace with React, TypeScript, and Tailwind CSS.
   3. Configure `src-tauri/Cargo.toml` with dependencies (`cpal`, `audiopus`, `rubato`, `tokio`, `mdns-sd`).
   4. Build standalone audio loopback test verifying `cpal` functionality on host OS.

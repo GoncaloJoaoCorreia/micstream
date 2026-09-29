@@ -18,8 +18,21 @@ pub struct UdpSender {
 
 impl UdpSender {
     pub async fn bind(local_port: u16, target_addr: SocketAddr) -> Result<Self, TransportError> {
-        let local_addr = format!("0.0.0.0:{}", local_port);
-        let socket = UdpSocket::bind(local_addr).await?;
+        let local_addr = match target_addr {
+            SocketAddr::V4(_) => format!("0.0.0.0:{}", local_port),
+            SocketAddr::V6(_) => format!("[::]:{}", local_port),
+        };
+        let socket = match UdpSocket::bind(&local_addr).await {
+            Ok(s) => s,
+            Err(_) => {
+                // Fallback to ephemeral port on default interface if requested port is taken
+                let fallback = match target_addr {
+                    SocketAddr::V4(_) => "0.0.0.0:0",
+                    SocketAddr::V6(_) => "[::]:0",
+                };
+                UdpSocket::bind(fallback).await?
+            }
+        };
         Ok(Self {
             socket: Arc::new(socket),
             target_addr,
@@ -43,7 +56,10 @@ pub struct UdpReceiver {
 impl UdpReceiver {
     pub async fn bind(listen_port: u16) -> Result<Self, TransportError> {
         let listen_addr = format!("0.0.0.0:{}", listen_port);
-        let socket = UdpSocket::bind(listen_addr).await?;
+        let socket = match UdpSocket::bind(&listen_addr).await {
+            Ok(s) => s,
+            Err(_) => UdpSocket::bind(format!("[::]:{}", listen_port)).await?,
+        };
         Ok(Self {
             socket: Arc::new(socket),
         })

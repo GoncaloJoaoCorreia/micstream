@@ -20,6 +20,8 @@ pub enum CaptureError {
     BuildStreamError(#[from] cpal::BuildStreamError),
     #[error("Failed to play input stream: {0}")]
     PlayStreamError(#[from] cpal::PlayStreamError),
+    #[error("Unsupported sample format: {0:?}")]
+    UnsupportedSampleFormat(SampleFormat),
 }
 
 pub const PROTOCOL_SAMPLE_RATE: u32 = 48000;
@@ -103,7 +105,7 @@ impl AudioCaptureEngine {
                     }
                 };
 
-                let channels = config.channels;
+                let channels = config.channels as usize;
 
                 let err_fn = |err| {
                     eprintln!("CPAL input stream error: {:?}", err);
@@ -116,9 +118,33 @@ impl AudioCaptureEngine {
                             if !running_clone.load(Ordering::Relaxed) {
                                 return;
                             }
-                            let mono_samples = downmix_to_mono_f32(data, channels as usize);
-                            let rms = calculate_rms(&mono_samples);
-                            sample_callback(&mono_samples, rms);
+                            let mono_samples = downmix_to_mono_f32(data, channels);
+                            let mono_resampled = if negotiated_rate != PROTOCOL_SAMPLE_RATE {
+                                resample_linear(&mono_samples, negotiated_rate, PROTOCOL_SAMPLE_RATE)
+                            } else {
+                                mono_samples
+                            };
+                            let rms = calculate_rms(&mono_resampled);
+                            sample_callback(&mono_resampled, rms);
+                        },
+                        err_fn,
+                        None,
+                    )?,
+                    SampleFormat::F64 => device.build_input_stream(
+                        &config,
+                        move |data: &[f64], _| {
+                            if !running_clone.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let f32_samples: Vec<f32> = data.iter().map(|&s| s as f32).collect();
+                            let mono_samples = downmix_to_mono_f32(&f32_samples, channels);
+                            let mono_resampled = if negotiated_rate != PROTOCOL_SAMPLE_RATE {
+                                resample_linear(&mono_samples, negotiated_rate, PROTOCOL_SAMPLE_RATE)
+                            } else {
+                                mono_samples
+                            };
+                            let rms = calculate_rms(&mono_resampled);
+                            sample_callback(&mono_resampled, rms);
                         },
                         err_fn,
                         None,
@@ -139,26 +165,187 @@ impl AudioCaptureEngine {
                                     }
                                 })
                                 .collect();
-                            let mono_samples = downmix_to_mono_f32(&f32_samples, channels as usize);
-                            let rms = calculate_rms(&mono_samples);
-                            sample_callback(&mono_samples, rms);
+                            let mono_samples = downmix_to_mono_f32(&f32_samples, channels);
+                            let mono_resampled = if negotiated_rate != PROTOCOL_SAMPLE_RATE {
+                                resample_linear(&mono_samples, negotiated_rate, PROTOCOL_SAMPLE_RATE)
+                            } else {
+                                mono_samples
+                            };
+                            let rms = calculate_rms(&mono_resampled);
+                            sample_callback(&mono_resampled, rms);
                         },
                         err_fn,
                         None,
                     )?,
-                    _ => device.build_input_stream(
+                    SampleFormat::I32 => device.build_input_stream(
                         &config,
-                        move |data: &[f32], _| {
+                        move |data: &[i32], _| {
                             if !running_clone.load(Ordering::Relaxed) {
                                 return;
                             }
-                            let mono_samples = downmix_to_mono_f32(data, channels as usize);
-                            let rms = calculate_rms(&mono_samples);
-                            sample_callback(&mono_samples, rms);
+                            let f32_samples: Vec<f32> = data
+                                .iter()
+                                .map(|&s| {
+                                    if s >= 0 {
+                                        s as f32 / i32::MAX as f32
+                                    } else {
+                                        s as f32 / -(i32::MIN as f32)
+                                    }
+                                })
+                                .collect();
+                            let mono_samples = downmix_to_mono_f32(&f32_samples, channels);
+                            let mono_resampled = if negotiated_rate != PROTOCOL_SAMPLE_RATE {
+                                resample_linear(&mono_samples, negotiated_rate, PROTOCOL_SAMPLE_RATE)
+                            } else {
+                                mono_samples
+                            };
+                            let rms = calculate_rms(&mono_resampled);
+                            sample_callback(&mono_resampled, rms);
                         },
                         err_fn,
                         None,
                     )?,
+                    SampleFormat::I8 => device.build_input_stream(
+                        &config,
+                        move |data: &[i8], _| {
+                            if !running_clone.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let f32_samples: Vec<f32> = data
+                                .iter()
+                                .map(|&s| {
+                                    if s >= 0 {
+                                        s as f32 / i8::MAX as f32
+                                    } else {
+                                        s as f32 / -(i8::MIN as f32)
+                                    }
+                                })
+                                .collect();
+                            let mono_samples = downmix_to_mono_f32(&f32_samples, channels);
+                            let mono_resampled = if negotiated_rate != PROTOCOL_SAMPLE_RATE {
+                                resample_linear(&mono_samples, negotiated_rate, PROTOCOL_SAMPLE_RATE)
+                            } else {
+                                mono_samples
+                            };
+                            let rms = calculate_rms(&mono_resampled);
+                            sample_callback(&mono_resampled, rms);
+                        },
+                        err_fn,
+                        None,
+                    )?,
+                    SampleFormat::U16 => device.build_input_stream(
+                        &config,
+                        move |data: &[u16], _| {
+                            if !running_clone.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let f32_samples: Vec<f32> = data
+                                .iter()
+                                .map(|&s| (s as f32 - 32768.0) / 32768.0)
+                                .collect();
+                            let mono_samples = downmix_to_mono_f32(&f32_samples, channels);
+                            let mono_resampled = if negotiated_rate != PROTOCOL_SAMPLE_RATE {
+                                resample_linear(&mono_samples, negotiated_rate, PROTOCOL_SAMPLE_RATE)
+                            } else {
+                                mono_samples
+                            };
+                            let rms = calculate_rms(&mono_resampled);
+                            sample_callback(&mono_resampled, rms);
+                        },
+                        err_fn,
+                        None,
+                    )?,
+                    SampleFormat::U8 => device.build_input_stream(
+                        &config,
+                        move |data: &[u8], _| {
+                            if !running_clone.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let f32_samples: Vec<f32> = data
+                                .iter()
+                                .map(|&s| (s as f32 - 128.0) / 128.0)
+                                .collect();
+                            let mono_samples = downmix_to_mono_f32(&f32_samples, channels);
+                            let mono_resampled = if negotiated_rate != PROTOCOL_SAMPLE_RATE {
+                                resample_linear(&mono_samples, negotiated_rate, PROTOCOL_SAMPLE_RATE)
+                            } else {
+                                mono_samples
+                            };
+                            let rms = calculate_rms(&mono_resampled);
+                            sample_callback(&mono_resampled, rms);
+                        },
+                        err_fn,
+                        None,
+                    )?,
+                    SampleFormat::U32 => device.build_input_stream(
+                        &config,
+                        move |data: &[u32], _| {
+                            if !running_clone.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let f32_samples: Vec<f32> = data
+                                .iter()
+                                .map(|&s| (s as f64 - 2147483648.0) as f32 / 2147483648.0)
+                                .collect();
+                            let mono_samples = downmix_to_mono_f32(&f32_samples, channels);
+                            let mono_resampled = if negotiated_rate != PROTOCOL_SAMPLE_RATE {
+                                resample_linear(&mono_samples, negotiated_rate, PROTOCOL_SAMPLE_RATE)
+                            } else {
+                                mono_samples
+                            };
+                            let rms = calculate_rms(&mono_resampled);
+                            sample_callback(&mono_resampled, rms);
+                        },
+                        err_fn,
+                        None,
+                    )?,
+                    SampleFormat::I64 => device.build_input_stream(
+                        &config,
+                        move |data: &[i64], _| {
+                            if !running_clone.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let f32_samples: Vec<f32> = data
+                                .iter()
+                                .map(|&s| (s as f64 / i64::MAX as f64) as f32)
+                                .collect();
+                            let mono_samples = downmix_to_mono_f32(&f32_samples, channels);
+                            let mono_resampled = if negotiated_rate != PROTOCOL_SAMPLE_RATE {
+                                resample_linear(&mono_samples, negotiated_rate, PROTOCOL_SAMPLE_RATE)
+                            } else {
+                                mono_samples
+                            };
+                            let rms = calculate_rms(&mono_resampled);
+                            sample_callback(&mono_resampled, rms);
+                        },
+                        err_fn,
+                        None,
+                    )?,
+                    SampleFormat::U64 => device.build_input_stream(
+                        &config,
+                        move |data: &[u64], _| {
+                            if !running_clone.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let f32_samples: Vec<f32> = data
+                                .iter()
+                                .map(|&s| ((s as f64 - 9223372036854775808.0) / 9223372036854775808.0) as f32)
+                                .collect();
+                            let mono_samples = downmix_to_mono_f32(&f32_samples, channels);
+                            let mono_resampled = if negotiated_rate != PROTOCOL_SAMPLE_RATE {
+                                resample_linear(&mono_samples, negotiated_rate, PROTOCOL_SAMPLE_RATE)
+                            } else {
+                                mono_samples
+                            };
+                            let rms = calculate_rms(&mono_resampled);
+                            sample_callback(&mono_resampled, rms);
+                        },
+                        err_fn,
+                        None,
+                    )?,
+                    format => {
+                        return Err(CaptureError::UnsupportedSampleFormat(format));
+                    }
                 };
 
                 stream.play()?;
@@ -241,6 +428,28 @@ pub fn calculate_rms(samples: &[f32]) -> f32 {
     (sum_sq / samples.len() as f32).sqrt()
 }
 
+pub fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    if from_rate == to_rate || input.is_empty() || from_rate == 0 || to_rate == 0 {
+        return input.to_vec();
+    }
+    let ratio = from_rate as f64 / to_rate as f64;
+    let out_len = ((input.len() as f64) / ratio).round() as usize;
+    if out_len == 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(out_len);
+    for i in 0..out_len {
+        let src_idx = i as f64 * ratio;
+        let idx0 = src_idx.floor() as usize;
+        let idx1 = (idx0 + 1).min(input.len() - 1);
+        let frac = (src_idx - idx0 as f64) as f32;
+        let s0 = input[idx0.min(input.len() - 1)];
+        let s1 = input[idx1];
+        out.push(s0 + frac * (s1 - s0));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +470,12 @@ mod tests {
 
         let constant = vec![0.5f32; 100];
         assert!((calculate_rms(&constant) - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_resample_linear() {
+        let input = vec![0.0, 0.5, 1.0, 0.5, 0.0];
+        let resampled = resample_linear(&input, 44100, 48000);
+        assert!(!resampled.is_empty());
     }
 }

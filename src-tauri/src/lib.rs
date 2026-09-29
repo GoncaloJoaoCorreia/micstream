@@ -27,6 +27,8 @@ pub fn run() {
             commands::get_app_config,
             commands::update_app_config,
             commands::set_target_jitter,
+            commands::start_input_monitor,
+            commands::stop_input_monitor,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

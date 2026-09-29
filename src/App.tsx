@@ -126,6 +126,21 @@ export function App() {
     }
   }, [role, isActive, startDiscovery, stopDiscovery]);
 
+  // Manage microphone input preview monitor when in client mode and idle
+  useEffect(() => {
+    if (role === "client" && !isActive) {
+      invoke("start_input_monitor", {
+        deviceName: selectedInput || null,
+      }).catch((err) => {
+        console.warn("Failed to start input monitor:", err);
+      });
+    } else if (role === "host") {
+      invoke("stop_input_monitor").catch((err) => {
+        console.warn("Failed to stop input monitor:", err);
+      });
+    }
+  }, [role, isActive, selectedInput]);
+
   const handleRoleChange = useCallback(
     (newRole: AppRole) => {
       if (isActive) return;
@@ -312,7 +327,7 @@ export function App() {
           level={currentLevel}
           peak={audioLevel.peak}
           label={role === "client" ? "Microphone Capture Level" : "Output Playback Level"}
-          isActive={isActive}
+          isActive={role === "client" || isActive}
         />
 
         {/* Real-time Connection Telemetry Badge */}
