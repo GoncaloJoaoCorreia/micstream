@@ -160,8 +160,13 @@ git push origin main
 ## Platform Specifics & Code Signing
 
 ### macOS Gatekeeper
-Unsigned `.dmg` releases will trigger Apple Gatekeeper on first launch.
-- **Workaround for Users**: Right-click (or Control-click) `MicStream.app` in Finder, select **Open**, and click **Open** in the dialog.
+Because MicStream releases are built without an Apple Developer ID certificate, the application is ad-hoc signed (`signingIdentity: "-"` in `tauri.conf.json`). When downloaded from GitHub Releases via a web browser, macOS attaches a quarantine attribute (`com.apple.quarantine`), triggering Gatekeeper.
+- **Workaround for Users**:
+  - Open **System Settings** > **Privacy & Security**, scroll down to **Security**, and click **Open Anyway**.
+  - Or remove the quarantine attribute in Terminal:
+    ```bash
+    xattr -cr /Applications/MicStream.app
+    ```
 
 ### Windows SmartScreen
 Unsigned Windows `.exe` installers may trigger Windows Defender SmartScreen.

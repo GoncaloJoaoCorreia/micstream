@@ -64,9 +64,14 @@ Download the latest release for your platform from the [GitHub Releases page](ht
 1. Download the `.dmg` installer file (e.g., `MicStream_x.y.z_aarch64.dmg` or `MicStream_x.y.z_x64.dmg`).
 2. Open the downloaded `.dmg` file and drag **MicStream** into your **Applications** folder.
 3. Launch **MicStream** from Applications or Spotlight.
-4. **First-launch Permission**:
+4. **First-launch Permission & Security**:
    - When prompted, grant MicStream permission to access your **Microphone**.
-   - *Note for unsigned builds*: If macOS shows a warning stating the app cannot be opened because it is from an unidentified developer, open **Finder**, go to **Applications**, right-click (or Control-click) **MicStream**, select **Open**, and then click **Open** in the dialog.
+   - *Note for unsigned builds*: Because MicStream uses ad-hoc signing, macOS Gatekeeper may show a warning when opening the downloaded app for the first time. If blocked:
+     - Open **System Settings** > **Privacy & Security**, scroll down to the **Security** section, and click **Open Anyway**.
+     - Or remove the quarantine attribute via Terminal:
+       ```bash
+       xattr -cr /Applications/MicStream.app
+       ```
 
 ### Windows Installation
 
@@ -167,6 +172,14 @@ Once streaming has started:
 ### Microphone permission errors on macOS
 - Open **System Settings** > **Privacy & Security** > **Microphone**.
 - Ensure that **MicStream** is toggled ON.
+
+### macOS Gatekeeper warning ("App is damaged and can't be opened" or "Unidentified developer")
+- On modern macOS versions (Sonoma/Sequoia), downloaded unsigned binaries are placed in quarantine by Gatekeeper.
+- Open **System Settings** > **Privacy & Security**, scroll to **Security**, and click **Open Anyway**.
+- Alternatively, run the following command in Terminal to clear the quarantine flag:
+  ```bash
+  xattr -cr /Applications/MicStream.app
+  ```
 
 ### Audio sounds choppy or stuttering
 - Ensure your client device has a stable Wi-Fi or Ethernet connection.
