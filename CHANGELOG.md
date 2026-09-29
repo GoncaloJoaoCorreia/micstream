@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-29
+
+### Added
+- Added macOS Gatekeeper quarantine handling and security bypass instructions to user installation and release documentation.
+
+### Fixed
+- Fixed macOS release application bundling and code signing by enabling ad-hoc signing (`signingIdentity: "-"`) to properly seal bundle resources and resolve Gatekeeper damaged binary errors.
+- Updated macOS bundle identifier to `com.micstream.desktop` to prevent bundle extension conflict warnings.
+
 ## [0.1.1] - 2026-09-29
 
 ### Added
@@ -24,8 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed audio sample downmixing and linear resampling when capturing from non-48 kHz audio input hardware.
 - Fixed stream lifecycle management and socket binding safety when toggling between client and host modes.
-- Fixed macOS release application bundling and code signing by enabling ad-hoc signing (`signingIdentity: "-"`) to properly seal bundle resources and resolve Gatekeeper damaged binary errors.
-- Updated macOS bundle identifier to `com.micstream.desktop` to prevent bundle extension conflict warnings.
 
 ## [0.1.0] - 2025-02-18
 
